@@ -2,7 +2,7 @@ import re
 from subprocess import check_output
 from time import sleep
 
-from selenium.common.exceptions import ElementNotInteractableException
+from selenium.common.exceptions import ElementNotInteractableException, ElementClickInterceptedException
 
 import utils
 from Feed import Feed
@@ -15,13 +15,19 @@ if __name__ == '__main__':
 
     feed = Feed(email, password)
 
-    for post in feed.select_all(9):
+    for i, post in enumerate(feed.browse()):
         try:
-            post.like_button_element.click()
-            sleep(0.5)
-            post.like_button_element.click()
-            sleep(0.5)
-        except ElementNotInteractableException:
-            utils.warning('Skipping uninteractable post')
+            if post.on('קדימה'):
+                post.like()
+                print(post)
+                print()
+                post.unlike()
+        except ElementClickInterceptedException as e:
+            utils.warning(f'Button shadowed, skipping...\n ' + str(e))
+        except ElementNotInteractableException as e:
+            utils.warning('Button uninteractable, skipping...\n' + str(e))
+
+        if i > 100:
+            break
 
     sleep(3)
