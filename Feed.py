@@ -27,45 +27,6 @@ class Feed:
         self.driver.find_element(By.ID, 'pass').send_keys(password)
         self.driver.find_element(By.ID, 'loginbutton').click()  # Send mouse click
 
-    def select_all(self, scroll_count: int):
-        original_position = self.get_scroll_position()
-        self.scroll_to_top()
-        post_elements = set()
-        posts = []
-        while scroll_count > 0:
-            self.scroll_to_bottom()
-            print('Scroll')
-            scroll_count -= 1
-            current_post_elements: Iterable[WebElement] = self.driver.find_elements(By.XPATH, '//div[@data-pagelet="FeedUnit_{n}"]')
-            current_post_elements = [el for el in current_post_elements if el.is_displayed()]
-            new_elements = set(current_post_elements) - post_elements
-            post_elements = post_elements.union(new_elements)
-            new_posts = list(map(partial(Post.from_element, self), new_elements))
-            for post in new_posts:
-                try:
-                    post.like()
-                    sleep(0.5)
-                    post.unlike()
-                except StaleElementReferenceException:
-                    post.refresh()
-                    post.like()
-                    sleep(0.5)
-                    post.unlike()
-            posts += new_posts
-        # self.scroll_to_pos(original_position)
-        self.scroll_to_top()
-        sleep(5)
-        return posts
-
-    def select_by_page(self, page_regex, scroll_count: int):
-        return [post for post in self.select_all(scroll_count) if re.compile(page_regex).search(post.on_page)]
-
-    def select_post_elements_by_account(self, account_regex: str, scroll_count: int):
-        return [post for post in self.select_all(scroll_count) if re.compile(account_regex).search(post.account)]
-
-    def select_post_elements_by_text(self, regex: str, scroll_count: int):
-        return [post for post in self.select_all(scroll_count) if re.compile(regex).search(post.text)]
-
     def __del__(self):
         self.driver.quit()
 
