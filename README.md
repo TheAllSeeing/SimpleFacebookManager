@@ -1,6 +1,5 @@
 # feedscraper
 
----
 This is a python library that may be used (in current time) to scrape data off of 
 facebook posts, as well as preform very basic user actions; the mian purpose is to 
 provide a tool for researchers, such that they can see how facebook algorithms 
