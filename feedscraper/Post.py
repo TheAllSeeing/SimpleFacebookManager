@@ -12,7 +12,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
-import utils
+from feedscraper import utils
 
 
 class Post:
@@ -64,7 +64,7 @@ class Post:
                 By.XPATH,
                 '//div[@data-pagelet="FeedUnit_{n}"][.//div[contains(text(), "' + self.text + '")]]')
 
-            refreshed = Post.from_element(self.feed, post_el)
+            refreshed = Post.from_home_element(self.feed, post_el)
 
             self.feed, self.on_page, self.account, self.text, self.like_button_element \
                 = refreshed.feed, refreshed.on_page, refreshed.account, refreshed.text, refreshed.like_button_element
@@ -73,18 +73,33 @@ class Post:
             utils.warning(str(self))
             utils.warning(str(e))
 
+    def to_csv_str(self):
+        return
 
     def __str__(self):
-        res = f'Post on {self.on_page} by {self.account} ({"Liked" if self.liked else "Not liked"})\n'
+        res = f'Post on {self.on_page} by {self.account}\n'  # ({"Liked" if self.liked else "Not liked"})\n'
         res += 'Like button ' + ('not ' if self.like_button_element is None else '') + 'found\n'
         res += self.text
         return res
 
     @staticmethod
-    def from_element(feed: Feed, post_element: WebElement):
+    def from_home_element(feed: 'HomeFeed', post_element: WebElement):
 
-        on_page_el = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h4//a')
-        on_page = on_page_el.get_attribute('innerText')
+        try:
+            on_page_el = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h4//a')
+            on_page = on_page_el.get_attribute('innerText')
+        except NoSuchElementException as e:
+            utils.warning('Could not locate post page')
+            on_page = '[NO PAGE]'
+
+        # dr: WebDriver = feed.driver
+        # dr.get_screenshot_as_png()
+
+        try:
+            timestamp = post_element.find_element(By.XPATH, '//span[contains(@class, "timestampContent")]')
+            print(repr(timestamp))
+        except NoSuchElementException as e:
+            utils.warning('Could not locate post timestamp')
 
         try:
             poster_account = post_element.find_element(By.XPATH, './/span/a/b').get_attribute('innerText')
@@ -135,5 +150,59 @@ class Post:
                 text = '[No Text]'
 
         post = Post(feed, on_page, poster_account, text, like_el)
+        # print('Intialized: \n' + str(post) + '\n')
+        return post
+
+    @staticmethod
+    def from_group_element(feed: 'GroupFeed', post_element: WebElement):
+
+        try:
+            poster_account = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h3//a')\
+                                         .get_attribute('innerText')
+        except NoSuchElementException:
+            utils.warning('Could not find account')
+            poster_account = '[No Account]'
+
+        try:
+            like_el: WebElement = post_element.find_element(By.XPATH, ".//span[text()='Like']/../../../..")
+        except NoSuchElementException as e:
+            utils.warning('Missing Like Element:\n' + str(e))
+            like_el = None
+
+        try:
+            see_more_btn = post_element.find_element(By.XPATH, './/div[@role="button" and text()="See more"]')
+            see_more_btn.click()
+        except ElementNotInteractableException:
+            utils.warning('See More button found, but could not be clicked\n')
+        except NoSuchElementException:
+            pass
+
+        try:
+            text_el = post_element.find_element(
+                By.XPATH,
+                './/div[@data-ad-preview="message"]/div[1]/div[1]/span[1]'
+            )
+
+            text = text_el.get_attribute('textContent')
+
+            if text == '':
+                utils.warning('Empty test element')
+                utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
+
+        except NoSuchElementException:
+            try:
+                text_el = post_element.find_element(
+                    By.XPATH,
+                    ".//div[contains(@style, 'font-weight: bold; text-align: center;')][1]"
+                )
+                text = text_el.get_attribute('textContent')
+                if text == '':
+                    utils.warning('Empty test element')
+                    utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
+            except NoSuchElementException:
+                utils.warning('No Text Found')
+                text = '[No Text]'
+
+        post = Post(feed, feed.group_name, poster_account, text, like_el)
         # print('Intialized: \n' + str(post) + '\n')
         return post

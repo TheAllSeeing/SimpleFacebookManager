@@ -1,5 +1,7 @@
 from enum import Enum
 
+from bs4 import BeautifulSoup
+from selenium.webdriver.remote.webelement import WebElement
 from termcolor import colored
 
 
@@ -26,3 +28,6 @@ def error(text: str):
 def warning(text: str):
     print(colortext(text, Color.YELLOW))
 
+
+def print_element(el: WebElement):
+    return BeautifulSoup(el.get_attribute('outerHTML')).prettify()
