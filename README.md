@@ -20,8 +20,11 @@ pip3 install .
 If you just want to play around without installing, you can clone the repo and write your code 
 in the `feedscraper` directory (in that case import classes from `Feed` directly).
 
+You may need to install chrome or [Chrome Driver](https://chromedriver.chromium.org/downloads) 
+or [Gecko Driver](https://github.com/mozilla/geckodriver/releases) to run the selenium automation.
+
 ## Features
-- Browse an infinite feed exactly like a user using selenium using a Feed object.
+- Browse an infinite feed with selenium, exactly like a normal facebook user.
 - Broswe either home or group feeds
 - Log in as existing user
 - Parse posts seen into Post objects including the page the post 
