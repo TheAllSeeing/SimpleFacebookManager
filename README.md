@@ -1,4 +1,4 @@
-# Simple Facebook Manager
+# feedscraper
 
 ---
 This is a python library that may be used (in current time) to scrape data off of 
