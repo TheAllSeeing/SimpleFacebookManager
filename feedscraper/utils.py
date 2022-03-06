@@ -1,7 +1,15 @@
+import re
+import traceback
 from enum import Enum
+from time import sleep
 
 from bs4 import BeautifulSoup
+from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, \
+    StaleElementReferenceException
+from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.wait import WebDriverWait
 from termcolor import colored
 
 
@@ -30,4 +38,4 @@ def warning(text: str):
 
 
 def print_element(el: WebElement):
-    return BeautifulSoup(el.get_attribute('outerHTML')).prettify()
+    return BeautifulSoup(el.get_attribute('outerHTML'), features='lxml').prettify()

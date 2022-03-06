@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
+import pprint
 import re
+import traceback
+from datetime import datetime
 from time import sleep
+from typing import List
 
+import jsonpickle as jsonpickle
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, \
     MoveTargetOutOfBoundsException, TimeoutException
@@ -12,27 +18,28 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
-from feedscraper import utils
+from feedscraper import utils, xpaths, extractors
+from feedscraper.extractors import Field, Metadata, Reactions, Reaction
 
 
 class Post:
-    def __init__(self, feed, on_page, account, text, like_el: WebElement):
+    def __init__(self, feed: Feed, *, metadata: Metadata, text: str, like_el: WebElement, liked: bool,
+                 sponsored: bool, recommended: bool, reactions: Reactions, url: str):
         self.feed = feed
-        self.on_page = on_page
-        self.account = account
+        self.metadata = metadata
         self.text = text
-        self.like_button_element = like_el
-
-    @property
-    def liked(self):
-        return self.like_button_element.get_attribute('aria-label') \
-               == 'Remove Like'
+        self.like_el = like_el
+        self.liked = liked
+        self.reactions = reactions
+        self.sponsored = sponsored
+        self.recommended = recommended
+        self.url = url
 
     def by(self, acc_regex):
-        return bool(re.compile(acc_regex).search(self.account))
+        return bool(re.compile(acc_regex).search(self.metadata.user))
 
     def on(self, page_regex):
-        return bool(re.compile(page_regex).search(self.on_page))
+        return bool(re.compile(page_regex).search(self.metadata.page))
 
     def contains(self, regex):
         return bool(re.compile(regex).search(self.text))
@@ -41,10 +48,10 @@ class Post:
         action = ActionChains(self.feed.driver)
         try:
             WebDriverWait(self.feed.driver, 5)\
-                .until(expected_conditions.element_to_be_clickable(self.like_button_element))
-            action.move_to_element(self.like_button_element).click().perform()
+                .until(expected_conditions.element_to_be_clickable(self.like_el))
+            action.move_to_element(self.like_el).click().perform()
         except (ElementNotInteractableException, MoveTargetOutOfBoundsException, TimeoutException):
-            self.feed.driver.execute_script("arguments[0].click();", self.like_button_element)
+            self.feed.driver.execute_script("arguments[0].click();", self.like_el)
         sleep(0.4)
 
     def like(self):
@@ -55,103 +62,83 @@ class Post:
         if self.liked:
             self.toggle_like()
 
-    def is_empty(self):
-        return self.account == '[No Account]' and self.text == '[No Text]' and self.like_button_element is None
-
-    def refresh(self):
-        try:
-            post_el = self.feed.driver.find_element(
-                By.XPATH,
-                '//div[@data-pagelet="FeedUnit_{n}"][.//div[contains(text(), "' + self.text + '")]]')
-
-            refreshed = Post.from_home_element(self.feed, post_el)
-
-            self.feed, self.on_page, self.account, self.text, self.like_button_element \
-                = refreshed.feed, refreshed.on_page, refreshed.account, refreshed.text, refreshed.like_button_element
-        except NoSuchElementException as e:
-            utils.warning('Could not refresh post: ')
-            utils.warning(str(self))
-            utils.warning(str(e))
-
     def to_csv_str(self):
-        return
+        pass
+
+    @property
+    def __dict__(self):
+        return {
+            Field.USER.value: self.metadata.user,
+            Field.PAGE.value: self.metadata.page,
+            Field.TIMESTAMP.value: self.metadata.timestamp,
+            Field.TEXT.value: self.text,
+            Field.REACTIONS.value: self.reactions,
+            Field.SPONSORED.value: self.sponsored,
+            Field.RECOMMENDED.value: self.recommended,
+            Field.LIKED.value: self.liked,
+            Field.URL.value: self.url
+        }
 
     def __str__(self):
-        res = f'Post on {self.on_page} by {self.account}\n'  # ({"Liked" if self.liked else "Not liked"})\n'
-        res += 'Like button ' + ('not ' if self.like_button_element is None else '') + 'found\n'
-        res += self.text
-        return res
+        if self.reactions is not None: print(self.reactions.angry)
+        return pprint.pformat(self.__dict__)
 
     @staticmethod
-    def from_home_element(feed: 'HomeFeed', post_element: WebElement):
+    def from_home_element(feed: 'HomeFeed', post_element: WebElement, fields: List[str]):
+        start = datetime.now()
 
-        try:
-            on_page_el = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h4//a')
-            on_page = on_page_el.get_attribute('innerText')
-        except NoSuchElementException as e:
-            utils.warning('Could not locate post page')
-            on_page = '[NO PAGE]'
-
-        # dr: WebDriver = feed.driver
-        # dr.get_screenshot_as_png()
-
-        try:
-            timestamp = post_element.find_element(By.XPATH, '//span[contains(@class, "timestampContent")]')
-            print(repr(timestamp))
-        except NoSuchElementException as e:
-            utils.warning('Could not locate post timestamp')
-
-        try:
-            poster_account = post_element.find_element(By.XPATH, './/span/a/b').get_attribute('innerText')
+        try: metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields)
         except NoSuchElementException:
-            poster_account = '[No Account]'
+            metadata = Metadata(None, None, None)
+            traceback.format_exc()
+        print('Metadata: ' + str(datetime.now() - start))
+        start = datetime.now()
+
+        if Field.SPONSORED.value in fields:
+            try: sponsored = extractors.is_sponsored(post_element) if Field.SPONSORED.value in fields else None
+            except NoSuchElementException: sponsored = None
+            print('Sponsored: ' + str(datetime.now() - start))
+            start = datetime.now()
+        else: sponsored = None
+
+        if Field.RECOMMENDED.value in fields:
+            try: recommended = extractors.is_recommended(post_element) if Field.RECOMMENDED.value in fields else None
+            except NoSuchElementException: recommended = None
+            print('Recommended: ' + str(datetime.now() - start))
+            start = datetime.now()
+        else: recommended = None
+
+        if Field.TEXT.value in fields:
+            try: text = extractors.text(post_element) if Field.TEXT.value in fields else None
+            except NoSuchElementException: text = None
+            print('Text: ' + str(datetime.now() - start))
+            start = datetime.now()
+        else: text = None
 
         try:
-            like_el: WebElement = post_element.find_element(By.XPATH, ".//span[text()='Like']/../../../..")
-        except NoSuchElementException as e:
-            utils.warning('Missing Like Element:\n' + str(e))
+            like_el = extractors.like_el(post_element)
+            liked = extractors.is_liked_by_button(like_el) if Field.LIKED.value in fields else None
+        except NoSuchElementException:
             like_el = None
+            liked = None
+        print('Like: ' + str(datetime.now() - start))
+        start = datetime.now()
 
-        try:
-            see_more_btn = post_element.find_element(By.XPATH, './/div[@role="button" and text()="See more"]')
-            see_more_btn.click()
-        except ElementNotInteractableException:
-            utils.warning('See More button found, but could not be clicked')
-            print()
-            # like_el.click()
-        except NoSuchElementException:
-            pass
+        if Field.REACTIONS.value in fields:
+            try: reactions = extractors.reactions(post_element, feed.driver) if Field.REACTIONS.value in fields else None
+            except NoSuchElementException: reactions = Reactions(*[None] * len(Reaction))
+            print('Reactions: ' + str(datetime.now() - start))
+            start = datetime.now()
+        else: reactions = Reactions(*[None] * len(Reaction))
 
-        try:
+        if Field.URL.value in fields:
+            try: url = extractors.url(post_element) if Field.URL.value in fields else None
+            except NoSuchElementException: url = None
+            print('URL: ' + str(datetime.now() - start))
+        else: url = None
 
-            text_el = post_element.find_element(
-                By.XPATH,
-                './/div[@data-ad-preview="message"]/div[1]/div[1]/span[1]'
-            )
-
-            text = text_el.get_attribute('textContent')
-
-            if text == '':
-                utils.warning('Empty test element')
-                utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
-
-        except NoSuchElementException:
-            try:
-                text_el = post_element.find_element(
-                    By.XPATH,
-                    ".//div[contains(@style, 'font-weight: bold; text-align: center;')][1]"
-                )
-                text = text_el.get_attribute('textContent')
-                if text == '':
-                    utils.warning('Empty test element')
-                    utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
-            except NoSuchElementException:
-                utils.warning('No Text Found')
-                text = '[No Text]'
-
-        post = Post(feed, on_page, poster_account, text, like_el)
-        # print('Intialized: \n' + str(post) + '\n')
-        return post
+        return Post(feed, metadata=metadata, sponsored=sponsored, recommended=recommended, text=text,
+                    like_el=like_el, liked=liked, reactions=reactions, url=url)
 
     @staticmethod
     def from_group_element(feed: 'GroupFeed', post_element: WebElement):
@@ -162,6 +149,13 @@ class Post:
         except NoSuchElementException:
             utils.warning('Could not find account')
             poster_account = '[No Account]'
+
+        try:
+            time_el = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/span//a')
+            print(f'Timestamp = {time_el.get_attribute("innerText")}')
+            feed.actions.move_to_element(time_el).preform()
+        except NoSuchElementException:
+            utils.warning('Could not find timestamp')
 
         try:
             like_el: WebElement = post_element.find_element(By.XPATH, ".//span[text()='Like']/../../../..")
@@ -202,6 +196,7 @@ class Post:
             except NoSuchElementException:
                 utils.warning('No Text Found')
                 text = '[No Text]'
+
 
         post = Post(feed, feed.group_name, poster_account, text, like_el)
         # print('Intialized: \n' + str(post) + '\n')
