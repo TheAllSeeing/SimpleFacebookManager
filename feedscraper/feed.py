@@ -100,7 +100,8 @@ class HomeFeed(Feed):
         i = 1
         post_count = 0
         scroll_fail_count = 0
-        while True:
+        # After failing to find any posts after 10 scroll attempts, assume the feed is over and exit.
+        while scroll_fail_count < 10:
             try:
                 post = Post.from_home_element(
                     self,
