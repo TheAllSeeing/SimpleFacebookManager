@@ -21,8 +21,6 @@ class Feed:
         self.email = email
         self.password = password
 
-        self.fields = [field.value for field in Field] if fields is None else fields
-
         options = webdriver.ChromeOptions()
         options.add_experimental_option("prefs", {
             "profile.default_content_setting_values.notifications": 1
@@ -87,7 +85,9 @@ class HomeFeed(Feed):
         utils.confirm('Clicked home')
         self.driver.implicitly_wait(5)
 
-    def browse(self):
+    def browse(self, fields=None):
+        fields = list(Field) if fields is None else fields # If no fields specified set to all
+
         self.scroll_to_top()
         try:
             feed_el = self.driver.find_element(By.XPATH, '//div[@role="feed"]')
@@ -105,7 +105,7 @@ class HomeFeed(Feed):
                 post = Post.from_home_element(
                     self,
                     extractors.post_el(feed_el, i),
-                    fields=self.fields
+                    fields=fields
                 )
                 pass
                 yield post
@@ -123,7 +123,7 @@ class HomeFeed(Feed):
                         yield Post.from_home_element(
                             self,
                             extractors.post_el(feed_el, i),
-                            fields=self.fields
+                            fields=fields
                         )
                         scroll_fail_count = 0
                         load_fail_count = 0
