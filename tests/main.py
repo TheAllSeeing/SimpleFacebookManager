@@ -1,48 +1,77 @@
-import itertools
-import pickle
+import configparser
 import subprocess
 from configparser import ConfigParser
+from time import sleep
+from typing import Tuple
 
 from feedscraper import utils
-from feedscraper.Feed import HomeFeed
+from feedscraper.extractors import Field
+from feedscraper.feed import HomeFeed
+from feedscraper.post import Post
 
 
-def get_cookie_file(user_name, write=False):
-    return open('data/' + user_name.replace(' ', '_').lower() + '.cks.pkl', ('w' if write else 'r') + 'b')
+def get_login(name: str) -> Tuple[str, str]:
+    users = ConfigParser()
+    users.read('tests/users.conf')
+
+    user = users[name]
+
+    return user['email'], user['password']
 
 
-def write_cookies(feed, user_name):
-    pickle.dump(feed.driver.get_cookies(), get_cookie_file(user_name, True))
+def like_posts(feed):
+    utils.confirm('We will now go on liking posts posted by users that start with E.')
+    for i, post in enumerate(feed.browse(fields=[Field.USER])):
+        print(f'--- {i:02d} ---')
+        print(post)
+        if post.by('^[Ee]'):
+            post.like()
+            utils.confirm('Liked: ' + post.metadata.user)
+        else:
+            utils.warning('Not liked. (' + post.metadata.user + ')')
+        print()
 
 
-def load_cookies(feed, user_name):
-    try:
-        cookies = pickle.load(get_cookie_file(user_name))
-        for cookie in cookies:
-            feed.driver.add_cookie(cookie)
-    except FileNotFoundError:
-        utils.warning('no cookies found for user ' + user_name)
+def show_side_ads(feed):
+    ads = feed.get_sidebar_ads()
+    print(ads)
+    while True:
+        feed.scroll_to_bottom()
+        sleep(2.5)
+        if feed.get_sidebar_ads()[0] != ads[0]:
+            ads = feed.get_sidebar_ads()
+            print(ads)
+
+
+def collect_posts(feed):
+    with open('tests/example.csv', 'w+') as f:
+        f.write(','.join(Post.CSV_HEADINGS))
+    for post in feed.browse(fields=[Field.USER, Field.PAGE, Field.TIMESTAMP, Field.URL, Field.TEXT]):
+        print(post.to_csv_str())
+        with open('tests/example.csv', 'a') as f:
+            f.write(post.to_csv_str())
+
+
+def pick_and_run(feed):
+    print('Pick example:')
+    print('1) Like posts by users that start with E')
+    print('2) Scroll and show side ads as they show')
+    print('3) Write posts to CSV file')
+    while True:
+        choice = input()
+        if choice == '1':
+            like_posts(feed)
+            break
+        if choice == '2':
+            show_side_ads(feed)
+            break
+        elif choice == '3':
+            collect_posts(feed)
+            break
 
 
 if __name__ == '__main__':
-    email = 'atayambus@gmail.com'
-    password = subprocess.check_output(['pass', 'social/facebook.com']).decode().split('\n')[0]
-
-    # users = ConfigParser()
-    # users.read('tests/users.conf')
-    #
-    # user_name = 'Example B'
-    # user = users[user_name]
-    #
-    # email = user['email']
-    # password = user['password']
-
-    feed = HomeFeed(email, password)#, data_dir=f'data/{user_name.replace(" ", "_")}')
-    posts = itertools.islice(feed.browse(), 200)
-
-    for i, post in enumerate(posts):
-        print(f'--- {i:02d} ---')
-        print(post)
-        print()
-
-    input()
+    user = 'Example A'
+    email, password = get_login(user)
+    feed = HomeFeed(email, password, data_dir=f'data/{user.replace(" ", "_")}')
+    pick_and_run(feed)

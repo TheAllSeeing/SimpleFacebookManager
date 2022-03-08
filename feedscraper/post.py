@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import pprint
 import re
 import traceback
 from datetime import datetime
+from enum import Enum
 from time import sleep
 from typing import List
 
-import jsonpickle as jsonpickle
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, \
     MoveTargetOutOfBoundsException, TimeoutException
@@ -18,14 +17,15 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
-from feedscraper import utils, xpaths, extractors
+from feedscraper import extractors
 from feedscraper.extractors import Field, Metadata, Reactions, Reaction
 from feedscraper.utils import warning
 
 
 class Post:
-    def __init__(self, feed: Feed, *, metadata: Metadata, text: str, like_el: WebElement, liked: bool,
+    def __init__(self, feed: Feed, id: int, *, metadata: Metadata, text: str, like_el: WebElement, liked: bool,
                  sponsored: bool, recommended: bool, reactions: Reactions, url: str):
+        self.id = id
         self.feed = feed
         self.metadata = metadata
         self.text = text
@@ -36,16 +36,32 @@ class Post:
         self.recommended = recommended
         self.url = url
 
-    def by(self, acc_regex):
-        return bool(re.compile(acc_regex).search(self.metadata.user))
+    def by(self, uname_regex: str) -> bool:
+        """
+        Checks for RegEx matches in the name of the user who posted.
+        :param uname_regex: regex to test
+        :return: whether there was a match
+        """
+        return bool(re.compile(uname_regex).search(self.metadata.user))
 
-    def on(self, page_regex):
+    def on(self, page_regex: str) -> bool:
+        """
+        Checks for RegEx matches in the name of the page the post was posted in.
+        :param page_regex: regex to test
+        :return: whether there was a match
+        """
         return bool(re.compile(page_regex).search(self.metadata.page))
 
     def contains(self, regex):
+        """
+        Searches for RegEx matches in the text contents of the post.
+        :param regex: regex to test
+        :return: whether there was a match
+        """
         return bool(re.compile(regex).search(self.text))
 
     def toggle_like(self):
+        """Toggle like button by the browsing user."""
         action = ActionChains(self.feed.driver)
         try:
             WebDriverWait(self.feed.driver, 5) \
@@ -56,19 +72,45 @@ class Post:
         sleep(0.4)
 
     def like(self):
+        """Like the post by the browsing user. Posts already liked will not be altered."""
         if not self.liked:
             self.toggle_like()
 
     def unlike(self):
+        """Unlike posts that were previously liked by the browsing user."""
         if self.liked:
             self.toggle_like()
 
+    CSV_HEADINGS = ['ID', 'Author', 'Date', 'Time', 'Content', 'URL', 'Sponsored', 'Recommended',
+                    'AngryCount', 'CareCount', 'HahaCount', 'LikeCount', 'SadCount', 'WowCount']
+
     def to_csv_str(self):
-        pass
+        """
+        Generates a comma separated list of post attributes under the following columns:
+
+        ID, Author, Date, Time, Content, URL, Sponsored, Recommended, AngryCount, CareCount,
+        HahaCount, LikeCount, SadCount, WowCount
+        """
+        none_handler = lambda x: '' if x is None else str(x)
+        return ','.join(map(none_handler, [
+            self.id,  # ID
+            self.metadata.user,  # Author
+            self.metadata.timestamp.strftime('%d/%m/%Y') if self.metadata.timestamp is not None else None,  # Date
+            self.metadata.timestamp.strftime('%R') if self.metadata.timestamp is not None else None,  # Time
+            self.text.replace('\n', '\\n') if self.text is not None else None,  # Content
+            self.url,  # URL
+            self.sponsored,  # sponsored
+            self.recommended  # Recommended
+        ] + list(self.reactions)))
 
     @property
     def __dict__(self):
+        """
+        :return: a dictionary containing post attributes.
+        Reactions are given as Reactions object, and timestamp as datetime.
+        """
         return {
+            'id': self.id,
             Field.USER.value: self.metadata.user,
             Field.PAGE.value: self.metadata.page,
             Field.TIMESTAMP.value: self.metadata.timestamp,
@@ -85,10 +127,35 @@ class Post:
 
     @staticmethod
     def from_home_element(feed: 'HomeFeed', post_element: WebElement, fields: List[str]):
+        """
+        Parses a post element from the home feed into a Post object.
+
+        This method will also print the time it took to parse each field, so users can decide which
+        are worth their time.
+
+        :param feed: The Feed object that found the post element
+        :param post_element: the post WebElement.
+        :param fields: the fields to scrape. See Field class for the full list. Fields not specified will be set to
+        None.
+
+        :return: A Post object containing all the specified fields, parsed from the given WebElement.
+        """
         start = datetime.now()
 
-        metadata_fields = [Field.USER, Field.PAGE, Field.TIMESTAMP]
+        # Generally the structure for each field is
+        # ```
+        # if field in fields:
+        #    try:
+        #        field = get_field()
+        #    except NoSuchElementException:
+        #        field = None
+        #    print("Field: " + time_it_took)
+        # else:
+        #    field = None
+        # ```
 
+        # Don't scrape metadata if none of the fields it contains are specified
+        metadata_fields = [Field.USER, Field.PAGE, Field.TIMESTAMP]
         if set(metadata_fields + [field.value for field in metadata_fields]).intersection(set(fields)):
             try:
                 metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields)
@@ -160,64 +227,6 @@ class Post:
         else:
             url = None
 
-        return Post(feed, metadata=metadata, sponsored=sponsored, recommended=recommended, text=text,
+        return Post(feed, hash(post_element),
+                    metadata=metadata, sponsored=sponsored, recommended=recommended, text=text,
                     like_el=like_el, liked=liked, reactions=reactions, url=url)
-
-    @staticmethod
-    def from_group_element(feed: 'GroupFeed', post_element: WebElement):
-
-        try:
-            poster_account = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h3//a') \
-                .get_attribute('innerText')
-        except NoSuchElementException:
-            utils.warning('Could not find account')
-            poster_account = '[No Account]'
-
-        try:
-            time_el = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/span//a')
-            print(f'Timestamp = {time_el.get_attribute("innerText")}')
-            feed.actions.move_to_element(time_el).preform()
-        except NoSuchElementException:
-            utils.warning('Could not find timestamp')
-
-        try:
-            like_el: WebElement = post_element.find_element(By.XPATH, ".//span[text()='Like']/../../../..")
-        except NoSuchElementException as e:
-            utils.warning('Missing Like Element:\n' + str(e))
-            like_el = None
-
-        try:
-            see_more_btn = post_element.find_element(By.XPATH, './/div[@role="button" and text()="See more"]')
-            see_more_btn.click()
-        except ElementNotInteractableException:
-            utils.warning('See More button found, but could not be clicked\n')
-        except NoSuchElementException:
-            pass
-
-        try:
-            text_el = post_element.find_element(
-                By.XPATH,
-                './/div[@data-ad-preview="message"]/div[1]/div[1]/span[1]'
-            )
-
-            text = text_el.get_attribute('textContent')
-
-            if text == '':
-                utils.warning('Empty test element')
-                utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
-
-        except NoSuchElementException:
-            try:
-                text_el = post_element.find_element(
-                    By.XPATH,
-                    ".//div[contains(@style, 'font-weight: bold; text-align: center;')][1]"
-                )
-                text = text_el.get_attribute('textContent')
-                if text == '':
-                    utils.warning('Empty test element')
-                    utils.warning(BeautifulSoup(text_el.get_attribute('outerHTML')).prettify())
-            except NoSuchElementException:
-                utils.warning('No Text Found')
-                text = '[No Text]'
-
-        return Post(feed, feed.group_name, poster_account, text, like_el)

@@ -1,3 +1,3 @@
-from feedscraper.Feed import Feed, HomeFeed, GroupFeed
+from feedscraper.feed import Feed, HomeFeed
 
-__Version__ = '0.0.1'
+__Version__ = '1.0.0'

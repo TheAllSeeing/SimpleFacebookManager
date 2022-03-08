@@ -39,3 +39,4 @@ def warning(text: str):
 
 def print_element(el: WebElement):
     return BeautifulSoup(el.get_attribute('outerHTML'), features='lxml').prettify()
+

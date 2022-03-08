@@ -1,10 +1,15 @@
+"""
+These modules contain extraction functions that take in HTML elements (usually the post's element) and give out
+some of its attributes such as timestamp, text or reactions.
+"""
+
 import re
 import traceback
 from collections import namedtuple
 from datetime import datetime
 from enum import Enum
 from time import sleep
-from typing import NamedTuple
+from typing import Optional
 
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException, \
     StaleElementReferenceException
@@ -13,11 +18,8 @@ from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 
-from feedscraper import Feed, xpaths, utils
+from feedscraper import xpaths, utils
 
-
-# def post(feed: WebElement, index: int) -> WebElement:
-#     return feed.find_element(By.XPATH, xpaths.)
 
 class Field(Enum):
     USER = 'user'
@@ -32,6 +34,9 @@ class Field(Enum):
 
 
 class Reaction(Enum):
+    """
+    An enum containing currently available facebook reactions
+    """
     ANGRY = "angry"
     CARE = "care"
     HAHA = "haha"
@@ -42,23 +47,45 @@ class Reaction(Enum):
 
 
 Metadata = namedtuple('Metadata', ['user', 'page', 'timestamp'])
-Reactions = namedtuple('Reactions', [reaction.name.lower() for reaction in Reaction])
+"""A namedtuple class that contains user, page and timestamp of a post"""
+Reactions = namedtuple('Reactions', sorted([reaction.name.lower() for reaction in Reaction]))
+"""A named tuple class that contain attributes for each of the reactions specified in Reaction"""
 
 
 def feed_el(driver: WebDriver) -> WebElement:
+    """
+    Get the facebook feed element from a WebDriver at an apropriate page
+
+    :param driver: a webdriver at a facebook page with a feed
+    :return: the feed WebElement
+    """
     return driver.find_element(By.XPATH, xpaths.FEED)
 
 
 def post_el(feed: WebElement, index: int) -> WebElement:
+    """
+    Retrieves a post element from a feed.
+
+    :param feed: the feed element the post is in
+    :param index: the position of the post in the feed (starting from 0 for the top one and incrementing with each post)
+    :return: the post's WebElement
+    """
     if index == 0:
         return feed.find_element(By.XPATH, xpaths.FIRST_POST)
     elif index == 1:
         return feed.find_element(By.XPATH, xpaths.SECOND_POST)
     else:
+        # NTH post retries posts from the third on. XPath indexes start at one.
         return feed.find_element(By.XPATH, f'{xpaths.NTH_POST}[{index - 1}]')
 
 
-def is_arrow_ui(post: WebElement):
+def is_arrow_ui(post: WebElement) -> bool:
+    """
+    Checks if a post's metadata is using "user > group" UI. See xpaths.ArrowUI for a more thorough explanation.
+
+    :param post: a post WebElement
+    :return: a boolean indicating arrow UI usage
+    """
     try:
         post.find_element(By.XPATH, f'{xpaths.METADATA}/{xpaths.ArrowUI.TOP_BY_METADATA}/{xpaths.ArrowUI.ARROW_BY_TOP}')
         return True
@@ -66,10 +93,22 @@ def is_arrow_ui(post: WebElement):
         return False
 
 
-def timestamp_from_el(time_el: WebElement, driver: WebDriver):
+def timestamp_from_el(time_el: WebElement, driver: WebDriver) -> Optional[datetime]:
+    """
+    Retrieve timestamp from a time element. In facebook the time a post was posted is directly given only on the
+    scale of days and in an inconsistend format. Hovering over the element creates a tooltip with the full date and
+    time in a consistent format.
+
+    :param time_el: post's time indicator element
+    :param driver: the webdriver browsing facebook
+    :return: a datetime object of the post's timestamp
+    """
     try:
+        # Move to time element
         ActionChains(driver).move_to_element(time_el).perform()
+        # Get tooltip (sometimes returns more than one) so make sure to take the last, which should be your element
         popup_el = driver.find_elements(By.XPATH, xpaths.TOOLTIP)[-1]
+
         popup_text = popup_el.get_attribute("textContent")
         return datetime.strptime(popup_text, '%A, %B %d, %Y at %I:%M %p')
     except IndexError:
@@ -80,25 +119,38 @@ def timestamp_from_el(time_el: WebElement, driver: WebDriver):
 
 
 def posting_metadata(post: WebElement, *, driver=None, fields=None) -> Metadata:
+    """
+    Gets post's metadata (user posting, group and timestamp) from its element
+
+    :param post: post element
+    :param driver: WebDriver browsing the facebook page
+    :param fields: fields to scrape (contain Field object or strings). May contain other fields, though they will be
+    ignored. Fields not specified will be set to None.
+    :return: a Metadata object containing string user and page  and datetime timestamp.
+    """
     metadata = post.find_element(By.XPATH, xpaths.METADATA)
+
+    # One version of heading UI that is sometimes used (user > group)
     if is_arrow_ui(post):
+
         top = metadata.find_element(By.XPATH, xpaths.ArrowUI.TOP_BY_METADATA)
 
-        if Field.USER.value in fields:
+        # Grab values if fields are given
+        if Field.USER.value in fields or Field.USER in fields:
             user = top.find_element(By.XPATH, xpaths.ArrowUI.USER_BY_TOP).get_attribute('innerText')
         else:
             user = None
-            print('USER not in specified fields')
 
-        if Field.PAGE.value in fields:
+        if Field.PAGE.value in fields or Field.PAGE in fields:
             page = top.find_element(By.XPATH, xpaths.ArrowUI.PAGE_BY_TOP).get_attribute('innerText')
         else:
             page = None
-        if Field.TIMESTAMP.value in fields:
+
+        if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
             try:
                 if driver is None:
                     raise ValueError('Required timestamp, but no driver given!')
-                time_el = top.find_element(By.XPATH, xpaths.ArrowUI.TIME_BY_METADATA)
+                time_el = metadata.find_element(By.XPATH, xpaths.ArrowUI.TIME_BY_METADATA)
                 timestamp = timestamp_from_el(time_el, driver)
             except NoSuchElementException:
                 timestamp = None
@@ -107,20 +159,26 @@ def posting_metadata(post: WebElement, *, driver=None, fields=None) -> Metadata:
 
         return Metadata(user, page, timestamp)
     else:
-        if Field.USER.value in fields:
-            user = metadata.find_element(By.XPATH, xpaths.NonArrowUI.USER_BY_METADATA).get_attribute('innerText')
-        else:
-            user = None
+        lower_metadata = metadata.find_element(By.XPATH, xpaths.LOWER_METADATA)
+        if len(lower_metadata.find_elements(By.XPATH, './*')) == 5:  # posted on group
+            if Field.USER.value in fields or Field.USER in fields:
+                user = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.USER_BY_LOWER_METADATA).get_attribute(
+                    'innerText')
+            else:
+                user = None
 
-        if Field.PAGE.value in fields:
-            page = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute('innerText')
+            if Field.PAGE.value in fields or Field.PAGE in fields:
+                page = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute('innerText')
+            else:
+                page = None
         else:
             page = None
+            user = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute('innerText')
 
-        if Field.TIMESTAMP.value in fields:
+        if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
             if driver is None:
                 raise ValueError('Required timestamp, but no driver given!')
-            time_el = metadata.find_element(By.XPATH, xpaths.NonArrowUI.TIME_BY_METADATA)
+            time_el = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.TIME_BY_LOWER_METADATA)
             timestamp = timestamp_from_el(time_el, driver)
         else:
             timestamp = None
@@ -129,6 +187,11 @@ def posting_metadata(post: WebElement, *, driver=None, fields=None) -> Metadata:
 
 
 def url(post: WebElement) -> str:
+    """
+    Get post URL from its element
+    :param post: post's WebElement
+    :return: post's URL
+    """
     metadata = post.find_element(By.XPATH, xpaths.METADATA)
     if is_arrow_ui(post):
         permalink = metadata.find_element(By.XPATH, xpaths.ArrowUI.PERMALINK_BY_METADATA)
@@ -188,14 +251,12 @@ def text(post: WebElement) -> str:
     except NoSuchElementException:
         pass
 
-    try:
-        return post.find_element(By.XPATH, xpaths.CONTENT_TEXT_ALTERNATE).get_attribute('innerText')
-    except NoSuchElementException:
-        return post.find_element(By.XPATH, xpaths.CONTENT_TEXT).get_attribute('innerText')
+    return post.find_element(By.XPATH, xpaths.CONTENT_TEXT).get_attribute('innerText')
 
 
 def more_comments_el(post: WebElement) -> WebElement:
     return post.find_element(By.XPATH, xpaths.MORE_COMMENTS)
+
 
 def reaction_bar_el(post: WebElement) -> WebElement:
     return post.find_element(By.XPATH, xpaths.REACTIONS_BAR)
