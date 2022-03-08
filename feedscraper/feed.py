@@ -76,8 +76,8 @@ class Feed:
 
 class HomeFeed(Feed):
 
-    def __init__(self, email, password, data_dir=None):
-        super(HomeFeed, self).__init__(email, password, data_dir=data_dir)
+    def __init__(self, email, password, *, fields=None, data_dir=None):
+        super(HomeFeed, self).__init__(email, password, fields=fields, data_dir=data_dir)
         try:
             self.driver.find_element(By.XPATH, '//a[@aria-label="Home"]').click()
             sleep(3)
@@ -102,11 +102,13 @@ class HomeFeed(Feed):
         scroll_fail_count = 0
         while True:
             try:
-                yield Post.from_home_element(
+                post = Post.from_home_element(
                     self,
                     extractors.post_el(feed_el, i),
                     fields=self.fields
                 )
+                pass
+                yield post
             except NoSuchElementException as e:
                 scroll_fail_count += 1
                 load_fail_count = 0

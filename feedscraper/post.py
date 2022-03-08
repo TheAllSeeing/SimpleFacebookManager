@@ -20,6 +20,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from feedscraper import utils, xpaths, extractors
 from feedscraper.extractors import Field, Metadata, Reactions, Reaction
+from feedscraper.utils import warning
 
 
 class Post:
@@ -47,7 +48,7 @@ class Post:
     def toggle_like(self):
         action = ActionChains(self.feed.driver)
         try:
-            WebDriverWait(self.feed.driver, 5)\
+            WebDriverWait(self.feed.driver, 5) \
                 .until(expected_conditions.element_to_be_clickable(self.like_el))
             action.move_to_element(self.like_el).click().perform()
         except (ElementNotInteractableException, MoveTargetOutOfBoundsException, TimeoutException):
@@ -80,40 +81,54 @@ class Post:
         }
 
     def __str__(self):
-        if self.reactions is not None: print(self.reactions.angry)
         return pprint.pformat(self.__dict__)
 
     @staticmethod
     def from_home_element(feed: 'HomeFeed', post_element: WebElement, fields: List[str]):
         start = datetime.now()
 
-        try: metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields)
-        except NoSuchElementException:
-            metadata = Metadata(None, None, None)
-            traceback.format_exc()
-        print('Metadata: ' + str(datetime.now() - start))
-        start = datetime.now()
+        metadata_fields = [Field.USER, Field.PAGE, Field.TIMESTAMP]
 
-        if Field.SPONSORED.value in fields:
-            try: sponsored = extractors.is_sponsored(post_element) if Field.SPONSORED.value in fields else None
-            except NoSuchElementException: sponsored = None
+        if set(metadata_fields + [field.value for field in metadata_fields]).intersection(set(fields)):
+            try:
+                metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields)
+            except NoSuchElementException:
+                metadata = Metadata(None, None, None)
+                traceback.format_exc()
+            print('Metadata: ' + str(datetime.now() - start))
+            start = datetime.now()
+        else:
+            metadata = Metadata(None, None, None)
+
+        if Field.SPONSORED.value in fields or Field.SPONSORED in fields:
+            try:
+                sponsored = extractors.is_sponsored(post_element)
+            except NoSuchElementException:
+                sponsored = None
             print('Sponsored: ' + str(datetime.now() - start))
             start = datetime.now()
-        else: sponsored = None
+        else:
+            sponsored = None
 
-        if Field.RECOMMENDED.value in fields:
-            try: recommended = extractors.is_recommended(post_element) if Field.RECOMMENDED.value in fields else None
-            except NoSuchElementException: recommended = None
+        if Field.RECOMMENDED.value in fields or Field.SPONSORED in fields:
+            try:
+                recommended = extractors.is_recommended(post_element)
+            except NoSuchElementException:
+                recommended = None
             print('Recommended: ' + str(datetime.now() - start))
             start = datetime.now()
-        else: recommended = None
+        else:
+            recommended = None
 
-        if Field.TEXT.value in fields:
-            try: text = extractors.text(post_element) if Field.TEXT.value in fields else None
-            except NoSuchElementException: text = None
+        if Field.TEXT.value in fields or Field.TEXT in fields:
+            try:
+                text = extractors.text(post_element)
+            except NoSuchElementException:
+                text = None
             print('Text: ' + str(datetime.now() - start))
             start = datetime.now()
-        else: text = None
+        else:
+            text = None
 
         try:
             like_el = extractors.like_el(post_element)
@@ -124,18 +139,26 @@ class Post:
         print('Like: ' + str(datetime.now() - start))
         start = datetime.now()
 
-        if Field.REACTIONS.value in fields:
-            try: reactions = extractors.reactions(post_element, feed.driver) if Field.REACTIONS.value in fields else None
-            except NoSuchElementException: reactions = Reactions(*[None] * len(Reaction))
+        if Field.REACTIONS.value in fields or Field.REACTIONS in fields:
+            try:
+                reactions = extractors.reactions(post_element, feed.driver)
+            except NoSuchElementException:
+                reactions = Reactions(*[None] * len(Reaction))
+                warning('Failed to grab reactions')
+                warning(traceback.format_exc())
             print('Reactions: ' + str(datetime.now() - start))
             start = datetime.now()
-        else: reactions = Reactions(*[None] * len(Reaction))
+        else:
+            reactions = Reactions(*[None] * len(Reaction))
 
-        if Field.URL.value in fields:
-            try: url = extractors.url(post_element) if Field.URL.value in fields else None
-            except NoSuchElementException: url = None
+        if Field.URL.value in fields or Field.URL in fields:
+            try:
+                url = extractors.url(post_element)
+            except NoSuchElementException:
+                url = None
             print('URL: ' + str(datetime.now() - start))
-        else: url = None
+        else:
+            url = None
 
         return Post(feed, metadata=metadata, sponsored=sponsored, recommended=recommended, text=text,
                     like_el=like_el, liked=liked, reactions=reactions, url=url)
@@ -144,8 +167,8 @@ class Post:
     def from_group_element(feed: 'GroupFeed', post_element: WebElement):
 
         try:
-            poster_account = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h3//a')\
-                                         .get_attribute('innerText')
+            poster_account = post_element.find_element(By.XPATH, './/div[@class="buofh1pr"]//span/h3//a') \
+                .get_attribute('innerText')
         except NoSuchElementException:
             utils.warning('Could not find account')
             poster_account = '[No Account]'
@@ -197,7 +220,4 @@ class Post:
                 utils.warning('No Text Found')
                 text = '[No Text]'
 
-
-        post = Post(feed, feed.group_name, poster_account, text, like_el)
-        # print('Intialized: \n' + str(post) + '\n')
-        return post
+        return Post(feed, feed.group_name, poster_account, text, like_el)
