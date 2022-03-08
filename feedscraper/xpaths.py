@@ -37,6 +37,7 @@ class Attr(Enum):
     ARIA_LABEL = '@aria-label'
     DATA_PAGELET = '@data-pagelet'
     DATA_AD_PREVIEW = '@data-ad-preview'
+    INNER_HTML = "@innerHTML"
 
 
 def equals(attr: Attr, value: str) -> str:
@@ -78,6 +79,10 @@ def starts_with(attr: Attr, start):
     return f'starts-with({attr.value}, "{start}")'
 
 
+def nonempty(attr: Attr):
+    return f'string-length({attr.value})'
+
+
 # Consistency #1:
 # roles you can query specifically for buttons, hyperlinks and tooltips/popups using the role attribute which is
 # consistent and human-readable
@@ -91,11 +96,7 @@ IS_TOOLTIP = equals(Attr.ROLE, 'tooltip')
 FEED = f'//*[{equals(Attr.ROLE, "feed")}]'
 """XPath query for a facebook feed"""
 
-FIRST_POST = '//*[' + equals(Attr.DATA_PAGELET, 'FeedUnit_0') + ']'
-"""XPath query for the first post in a home feed"""
-SECOND_POST = '//*[' + equals(Attr.DATA_PAGELET, 'FeedUnit_1') + ']'
-"""XPath query for the second post in a home feed"""
-NTH_POST = '//*[' + equals(Attr.DATA_PAGELET, 'FeedUnit_{n}') + ']'
+POST_BY_FEED = f'/div[{nonempty(Attr.INNER_HTML)}]'
 """XPath query for the posts in a facebook home feed, from the third onwards"""
 
 # Consistency #2:
@@ -104,7 +105,7 @@ NTH_POST = '//*[' + equals(Attr.DATA_PAGELET, 'FeedUnit_{n}') + ']'
 METADATA = f'.//div[{equals(Attr.CLASS, "buofh1pr")}]/div[1]'
 """XPath query for the top of a post element containing its timestamp, user, group, and privacy settings"""
 
-LOWER_METADATA = f'.//h4/../../../div[2]//span[{starts_with(Attr.ID, "jsc_c")}]'
+LOWER_METADATA = f'./*[2]'
 """XPath query for the lower part of the metadata section of a post, containing the timestamp and privacy setting"""
 
 SPONSORED = f'.//a[{equals(Attr.ARIA_LABEL, "Sponsored")} and {IS_LINK}]'
@@ -166,3 +167,19 @@ class NonArrowUI:
     USER_BY_LOWER_METADATA = './*[1]'
     TIME_BY_LOWER_METADATA = f'./*[3]'
     PERMALINK_BY_METADATA = f'{LOWER_METADATA}/{TIME_BY_LOWER_METADATA}//a'
+
+
+class Group:
+    METADATA = './/div[@class="buofh1pr"]'
+    USER_BY_METADATA = './/span/h2//a'
+    TIME_BY_METADATA = './/span[2]/span//a'
+    PERMALINK_BY_METADATA = TIME_BY_METADATA
+
+
+class Page:
+    FEED = f'//*[{equals(Attr.ROLE, "main")}]//*[{equals(Attr.ROLE, "main")}]/div[1]'
+    POST_BY_FEED = './div'
+    METADATA = Group.METADATA
+    USER_BY_METADATA = Group.USER_BY_METADATA
+    TIME_BY_METADATA = Group.TIME_BY_METADATA
+    PERMALINK_BY_METADATA = Group.PERMALINK_BY_METADATA

@@ -126,7 +126,7 @@ class Post:
         return pprint.pformat(self.__dict__)
 
     @staticmethod
-    def from_home_element(feed: 'HomeFeed', post_element: WebElement, fields: List[str]):
+    def from_element(feed: 'HomeFeed', post_element: WebElement, fields: List[str], in_group=False):
         """
         Parses a post element from the home feed into a Post object.
 
@@ -158,10 +158,11 @@ class Post:
         metadata_fields = [Field.USER, Field.PAGE, Field.TIMESTAMP]
         if set(metadata_fields + [field.value for field in metadata_fields]).intersection(set(fields)):
             try:
-                metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields)
+                metadata = extractors.posting_metadata(post_element, driver=feed.driver, fields=fields, group=in_group)
             except NoSuchElementException:
                 metadata = Metadata(None, None, None)
-                traceback.format_exc()
+                warning('Error in parsing metadata')
+                warning(traceback.format_exc())
             print('Metadata: ' + str(datetime.now() - start))
             start = datetime.now()
         else:
@@ -220,7 +221,7 @@ class Post:
 
         if Field.URL.value in fields or Field.URL in fields:
             try:
-                url = extractors.url(post_element)
+                url = extractors.url(post_element, group=in_group)
             except NoSuchElementException:
                 url = None
             print('URL: ' + str(datetime.now() - start))

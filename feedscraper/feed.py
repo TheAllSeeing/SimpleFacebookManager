@@ -1,8 +1,10 @@
+import re
 import traceback
 from collections import namedtuple
 from datetime import date
 from time import sleep
 from typing import List
+from urllib.parse import unquote, quote
 
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
@@ -10,7 +12,7 @@ from selenium.webdriver import ActionChains
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 
-from feedscraper import utils, extractors
+from feedscraper import utils, extractors, xpaths
 from feedscraper.post import Post
 from feedscraper.extractors import Field
 
@@ -96,6 +98,83 @@ class Feed:
                 map(str.splitlines,  # split to lines
                     map(lambda el: el.text, ads_text))))  # get text
 
+    def browse(self, fields=None, in_group=None):
+        """
+        A generator iterating posts.
+        Each post generated will scroll the page and hover over elements as necessary.
+        The webdriver window should not be interacted with manually while posts are generated.
+
+        Facebook places long temporary blocks on interactions that are performed too quickly in succession
+        by the same user, so some amount of wait between post generation is recommended.
+
+        Posts will be generated according to the fields set in the fields param.
+
+        :param fields: the fields to collect for each post. For a complete list,
+        see the Field enum in the extractors' module. By default, all of them.
+
+        :return: a generator iterating over the posts in the feed as post object
+        """
+
+        fields = list(Field) if fields is None else fields  # If no fields specified set to all
+
+        self.scroll_to_top()
+
+        # First, find the feed element
+        try:
+            feed_el = self.driver.find_element(By.XPATH, xpaths.FEED)
+        except NoSuchElementException:
+            try:
+                feed_el = self.driver.find_element(By.XPATH, xpaths.Page.FEED)
+            except NoSuchElementException:
+                utils.error('Could not find feed element!')
+                utils.error(traceback.format_exc())
+                exit(1)
+
+        i = 1  # Post index (XPath index starts from 1)
+        post_count = 0  # Count of posts found
+        scroll_fail_count = 0  # Times scrolled to the bottom without finding a post
+        # After failing to find any posts after 10 scroll attempts, assume the feed is over and exit.
+        while scroll_fail_count < 10:
+            try:
+                yield Post.from_element(
+                    self,
+                    extractors.post_el(feed_el, i),
+                    fields=fields,
+                    in_group=in_group
+                )
+            except NoSuchElementException as e:
+                # Set warning variables
+                scroll_fail_count += 1  # When this reaches 10 the loop should end.
+                load_fail_count = 0
+
+                # Warn
+                utils.warning(f'{post_count} Scroll Fail Count: {scroll_fail_count}')
+                utils.warning(str(e))
+
+                # Try to load more posts
+                self.scroll_to_bottom()
+                sleep(Feed.SCROLL_PAUSE)
+
+                while load_fail_count < 10:  # Try to wait for the post to load in 0.5 seconds intervals
+                    try:
+                        yield Post.from_element(
+                            self,
+                            extractors.post_el(feed_el, i),
+                            fields=fields,
+                            in_group=in_group
+                        )
+                        scroll_fail_count = 0
+                        load_fail_count = 0
+                        break
+                    except NoSuchElementException as e:
+                        sleep(0.5)
+                        load_fail_count += 1
+                        utils.warning(f'{post_count} Load fail count: {load_fail_count}')
+                        utils.warning(traceback.format_exc())
+                        utils.warning(str(e))
+            finally:
+                i += 1
+
 
 class HomeFeed(Feed):
     """Feed browsing the home page"""
@@ -127,74 +206,30 @@ class HomeFeed(Feed):
         self.driver.implicitly_wait(5)
 
     def browse(self, fields=None):
-        """
-        A generator iterating posts.
-        Each post generated will scroll the page and hover over elements as necessary.
-        The webdriver window should not be interacted with manually while posts are generated.
+        return super(HomeFeed, self).browse(fields=fields)
 
-        Facebook places long temporary blocks on interactions that are performed too quickly in succession
-        by the same user, so some amount of wait between post generation is recommended.
 
-        Posts will be generated according to the fields set in the fields param.
+class PageFeed(Feed):
 
-        :param fields: the fields to collect for each post. For a complete list,
-        see the Field enum in the extractors' module. By default, all of them.
+    def __init__(self, email, password, page_uid, data_dir=None):
+        super(PageFeed, self).__init__(email, password, data_dir=data_dir)
+        self.url = 'https://www.facebook.com/' + page_uid + '/'
+        self.driver.get(self.url)
+        self.page_name = re.match(
+            r'https://www\.facebook\.com/(.*)-' + page_uid,
+            unquote(self.driver.current_url)
+        ).group(1).replace('-', ' ')
 
-        :return: a generator iterating over the posts in the feed as post object
-        """
+    def browse(self, fields=None):
+        return super(PageFeed, self).browse(fields=fields, in_group=self.page_name)
 
-        fields = list(Field) if fields is None else fields # If no fields specified set to all
 
-        self.scroll_to_top()
+class GroupFeed(Feed):
+    def __init__(self, email, password, group_uid, data_dir=None):
+        super(GroupFeed, self).__init__(email, password, data_dir=data_dir)
+        self.url = 'https://www.facebook.com/groups/' + group_uid + '/'
+        self.driver.get(self.url)
+        self.page_name = self.driver.find_element(By.XPATH, f'//a[@href="{self.url}"]').text
 
-        # First, find the feed element
-        try:
-            feed_el = self.driver.find_element(By.XPATH, '//div[@role="feed"]')
-        except NoSuchElementException as e:
-            utils.error('Could not find feed element!')
-            print(e)
-            traceback.format_exc()
-            exit(1)
-
-        i = 1  # Post index (XPath index starts from 1)
-        post_count = 0  # Count of posts found
-        scroll_fail_count = 0  # Times scrolled to the bottom without finding a post
-        # After failing to find any posts after 10 scroll attempts, assume the feed is over and exit.
-        while scroll_fail_count < 10:
-            try:
-                yield Post.from_home_element(
-                    self,
-                    extractors.post_el(feed_el, i),
-                    fields=fields
-                )
-            except NoSuchElementException as e:
-                # Set warning variables
-                scroll_fail_count += 1  # When this reaches 10 the loop should end.
-                load_fail_count = 0
-
-                # Warn
-                utils.warning(f'{post_count} Scroll Fail Count: {scroll_fail_count}')
-                utils.warning(str(e))
-
-                # Try to load more posts
-                self.scroll_to_bottom()
-                sleep(Feed.SCROLL_PAUSE)
-
-                while load_fail_count < 10:  # Try to wait for the post to load in 0.5 seconds intervals
-                    try:
-                        yield Post.from_home_element(
-                            self,
-                            extractors.post_el(feed_el, i),
-                            fields=fields
-                        )
-                        scroll_fail_count = 0
-                        load_fail_count = 0
-                        break
-                    except NoSuchElementException as e:
-                        sleep(0.5)
-                        load_fail_count += 1
-                        utils.warning(f'{post_count} Load fail count: {load_fail_count}')
-                        utils.warning(traceback.format_exc())
-                        utils.warning(str(e))
-            finally:
-                i += 1
+    def browse(self, fields=None):
+        return super(GroupFeed, self).browse(fields=fields, in_group=self.page_name)

@@ -70,13 +70,7 @@ def post_el(feed: WebElement, index: int) -> WebElement:
     :param index: the position of the post in the feed (starting from 0 for the top one and incrementing with each post)
     :return: the post's WebElement
     """
-    if index == 0:
-        return feed.find_element(By.XPATH, xpaths.FIRST_POST)
-    elif index == 1:
-        return feed.find_element(By.XPATH, xpaths.SECOND_POST)
-    else:
-        # NTH post retries posts from the third on. XPath indexes start at one.
-        return feed.find_element(By.XPATH, f'{xpaths.NTH_POST}[{index - 1}]')
+    return feed.find_element(By.XPATH, f'./*[{index + 1}]')  # +1 because the first is "New Activity" title
 
 
 def is_arrow_ui(post: WebElement) -> bool:
@@ -87,7 +81,8 @@ def is_arrow_ui(post: WebElement) -> bool:
     :return: a boolean indicating arrow UI usage
     """
     try:
-        post.find_element(By.XPATH, f'{xpaths.METADATA}/{xpaths.ArrowUI.TOP_BY_METADATA}/{xpaths.ArrowUI.ARROW_BY_TOP}')
+        post.find_element(By.XPATH,
+                          f'{xpaths.METADATA}/{xpaths.ArrowUI.TOP_BY_METADATA}/{xpaths.ArrowUI.ARROW_BY_TOP}')
         return True
     except NoSuchElementException:
         return False
@@ -114,11 +109,90 @@ def timestamp_from_el(time_el: WebElement, driver: WebDriver) -> Optional[dateti
     except IndexError:
         utils.warning(utils.print_element(time_el))
         raise NoSuchElementException('Unable to find timestamp')
-    except ElementNotInteractableException:
+    except (ElementNotInteractableException, StaleElementReferenceException):
         return None
 
 
-def posting_metadata(post: WebElement, *, driver=None, fields=None) -> Metadata:
+def metadata_group_post(post: WebElement, group_name, *, driver=None, fields=None):
+    metadata = post.find_element(By.XPATH, xpaths.Group.METADATA)
+    if Field.USER.value in fields or Field.USER in fields:
+        user = metadata.find_element(By.XPATH, xpaths.Group.USER_BY_METADATA).get_attribute('innerText')
+    else:
+        user = None
+
+    if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
+        try:
+            if driver is None:
+                raise ValueError('Required timestamp, but no driver given!')
+            time_el = metadata.find_element(By.XPATH, xpaths.Group.TIME_BY_METADATA)
+            timestamp = timestamp_from_el(time_el, driver)
+        except NoSuchElementException:
+            timestamp = None
+    else:
+        timestamp = None
+
+    return Metadata(user, group_name, timestamp)
+
+
+def metadata_arrowui(element: WebElement, *, driver=None, fields=None):
+    top = element.find_element(By.XPATH, xpaths.ArrowUI.TOP_BY_METADATA)
+
+    # Grab values if fields are given
+    if Field.USER.value in fields or Field.USER in fields:
+        user = top.find_element(By.XPATH, xpaths.ArrowUI.USER_BY_TOP).get_attribute('innerText')
+    else:
+        user = None
+
+    if Field.PAGE.value in fields or Field.PAGE in fields:
+        page = top.find_element(By.XPATH, xpaths.ArrowUI.PAGE_BY_TOP).get_attribute('innerText')
+    else:
+        page = None
+
+    if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
+        try:
+            if driver is None:
+                raise ValueError('Required timestamp, but no driver given!')
+            time_el = element.find_element(By.XPATH, xpaths.ArrowUI.TIME_BY_METADATA)
+            timestamp = timestamp_from_el(time_el, driver)
+        except NoSuchElementException:
+            timestamp = None
+    else:
+        timestamp = None
+
+    return Metadata(user, page, timestamp)
+
+
+def metadata_classic(element: WebElement, *, driver=None, fields=None):
+    lower_metadata = element.find_element(By.XPATH, xpaths.LOWER_METADATA)
+    if len(lower_metadata.find_elements(By.XPATH, './*')) == 5:  # posted on group
+        if Field.USER.value in fields or Field.USER in fields:
+            user = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.USER_BY_LOWER_METADATA).get_attribute(
+                'innerText')
+        else:
+            user = None
+
+        if Field.PAGE.value in fields or Field.PAGE in fields:
+            page = element.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute(
+                'innerText')
+        else:
+            page = None
+    else:
+        page = None
+        user = element.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute(
+            'innerText')
+
+    if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
+        if driver is None:
+            raise ValueError('Required timestamp, but no driver given!')
+        time_el = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.TIME_BY_LOWER_METADATA)
+        timestamp = timestamp_from_el(time_el, driver)
+    else:
+        timestamp = None
+
+    return Metadata(user, page, timestamp)
+
+
+def posting_metadata(post: WebElement, *, driver=None, fields=None, group=None) -> Metadata:
     """
     Gets post's metadata (user posting, group and timestamp) from its element
 
@@ -126,78 +200,39 @@ def posting_metadata(post: WebElement, *, driver=None, fields=None) -> Metadata:
     :param driver: WebDriver browsing the facebook page
     :param fields: fields to scrape (contain Field object or strings). May contain other fields, though they will be
     ignored. Fields not specified will be set to None.
+
+    :param group: group name, if post is in group.
     :return: a Metadata object containing string user and page  and datetime timestamp.
     """
-    metadata = post.find_element(By.XPATH, xpaths.METADATA)
+
+    if group:
+        return metadata_group_post(post, group, driver=driver, fields=fields)
 
     # One version of heading UI that is sometimes used (user > group)
+    metadata = post.find_element(By.XPATH, xpaths.METADATA)
+
     if is_arrow_ui(post):
-
-        top = metadata.find_element(By.XPATH, xpaths.ArrowUI.TOP_BY_METADATA)
-
-        # Grab values if fields are given
-        if Field.USER.value in fields or Field.USER in fields:
-            user = top.find_element(By.XPATH, xpaths.ArrowUI.USER_BY_TOP).get_attribute('innerText')
-        else:
-            user = None
-
-        if Field.PAGE.value in fields or Field.PAGE in fields:
-            page = top.find_element(By.XPATH, xpaths.ArrowUI.PAGE_BY_TOP).get_attribute('innerText')
-        else:
-            page = None
-
-        if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
-            try:
-                if driver is None:
-                    raise ValueError('Required timestamp, but no driver given!')
-                time_el = metadata.find_element(By.XPATH, xpaths.ArrowUI.TIME_BY_METADATA)
-                timestamp = timestamp_from_el(time_el, driver)
-            except NoSuchElementException:
-                timestamp = None
-        else:
-            timestamp = None
-
-        return Metadata(user, page, timestamp)
+        return metadata_arrowui(metadata, fields=fields, driver=driver)
     else:
-        lower_metadata = metadata.find_element(By.XPATH, xpaths.LOWER_METADATA)
-        if len(lower_metadata.find_elements(By.XPATH, './*')) == 5:  # posted on group
-            if Field.USER.value in fields or Field.USER in fields:
-                user = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.USER_BY_LOWER_METADATA).get_attribute(
-                    'innerText')
-            else:
-                user = None
-
-            if Field.PAGE.value in fields or Field.PAGE in fields:
-                page = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute('innerText')
-            else:
-                page = None
-        else:
-            page = None
-            user = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PAGE_BY_METADATA).get_attribute('innerText')
-
-        if Field.TIMESTAMP.value in fields or Field.TIMESTAMP in fields:
-            if driver is None:
-                raise ValueError('Required timestamp, but no driver given!')
-            time_el = lower_metadata.find_element(By.XPATH, xpaths.NonArrowUI.TIME_BY_LOWER_METADATA)
-            timestamp = timestamp_from_el(time_el, driver)
-        else:
-            timestamp = None
-
-        return Metadata(user, page, timestamp)
+        return metadata_classic(metadata, fields=fields, driver=driver)
 
 
-def url(post: WebElement) -> str:
+def url(post: WebElement, group=False) -> str:
     """
     Get post URL from its element
     :param post: post's WebElement
     :return: post's URL
     """
+    if group:
+        permalink = post.find_element(By.XPATH, f'{xpaths.Group.METADATA}/{xpaths.Group.PERMALINK_BY_METADATA}')
+        return re.sub(r'\?.*$', '', permalink.get_attribute('href'))
+
     metadata = post.find_element(By.XPATH, xpaths.METADATA)
     if is_arrow_ui(post):
         permalink = metadata.find_element(By.XPATH, xpaths.ArrowUI.PERMALINK_BY_METADATA)
     else:
         permalink = metadata.find_element(By.XPATH, xpaths.NonArrowUI.PERMALINK_BY_METADATA)
-    return re.sub('&.*$', '', permalink.get_attribute('href'))
+    return re.sub(r'&.*$', '', permalink.get_attribute('href'))
 
 
 def is_sponsored(post: WebElement) -> bool:
