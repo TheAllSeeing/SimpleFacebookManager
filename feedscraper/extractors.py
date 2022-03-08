@@ -200,11 +200,11 @@ def more_comments_el(post: WebElement) -> WebElement:
 def reaction_bar_el(post: WebElement) -> WebElement:
     return post.find_element(By.XPATH, xpaths.REACTIONS_BAR)
 
-def count_reactions_from_bar(bar_element: WebElement, driver: WebDriver, reaction: Reaction, verbose=True):
-    reaction_name = reaction.name.title()
-    reaction_el = bar_element.find_element(By.XPATH, xpaths.reaction_btn(reaction_name))
-    ActionChains(driver).move_to_element(reaction_el).perform()
-    popup_el = driver.find_element(By.XPATH, xpaths.reaction_tooltip(reaction_name))
+
+def count_reactions_from_button(button_element: WebElement, driver: WebDriver, reaction_name: str):
+    ActionChains(driver).move_to_element(button_element).perform()
+    popup_el = driver.find_element(By.XPATH, xpaths.TOOLTIP)
+    sleep(1)
     reaction_list = popup_el.text.split('\n')[1:]  # first item is reaction_name
 
     more_match = re.compile('and ([0-9,]+) more…').match(reaction_list[-1])
@@ -215,19 +215,25 @@ def count_reactions_from_bar(bar_element: WebElement, driver: WebDriver, reactio
 
 
 def reactions(post: WebElement, driver: WebDriver) -> Reactions:
-    params = []
-    reaction_bar = reaction_bar_el(post)
-    for reaction in Reaction:
+    params = {reaction.name.lower(): 0 for reaction in Reaction}
+
+    try:
+        reaction_bar = reaction_bar_el(post)
+    except NoSuchElementException:
+        return Reactions(*[0] * len(Reaction))
+
+    for reaction_el in reaction_bar.find_elements(By.XPATH, './/*[@aria-label]'):
         start = datetime.now()
+        reaction_name = reaction_el.get_attribute('aria-label').split(':')[0].lower()
         try:
-            params.append(count_reactions_from_bar(reaction_bar, driver, reaction))
+            params[reaction_name] = count_reactions_from_button(reaction_el, driver, reaction_name)
         except NoSuchElementException:
-            params.append(0)
+            pass  #
         except (ElementNotInteractableException, StaleElementReferenceException):
-            utils.warning(f'Failed to grab {reaction.name} count: ')
+            utils.warning(f'Failed to grab {reaction_name} count: ')
             utils.warning(traceback.format_exc())
-            params[reaction.name.lower()] = -1
-        print(reaction.name.lower() + ': ' + str(datetime.now() - start))
+            params[reaction_name] = None
+        print(reaction_name + ': ' + str(datetime.now() - start))
+    # Get a list sorted by reaction name, as in the Reactions constructor
+    params = [it[1] for it in sorted(params.items(), key=lambda it: it[0])]
     return Reactions(*params)
-
-

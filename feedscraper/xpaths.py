@@ -82,17 +82,8 @@ _more_comments.append('contains(text(), "View more comments")')
 
 MORE_COMMENTS = f'.//div[{IS_BUTTON}]//*[{" or ".join(_more_comments)}]'
 
-REACTIONS_BAR = f'.//span[{equals(Attr.ARIA_LABEL, "See who reacted to this")} and {equals(Attr.ROLE, "toolbar")}'
-
-
-def reaction_btn(reaction_name):
-    query = starts_with(Attr.ARIA_LABEL, f'{reaction_name.title()}: ')
-    return f'.//*[{query}]'
-
-
-def reaction_tooltip(reaction_name):
-    query = IS_TOOLTIP + ' and ' + contains(Attr.TEXT, reaction_name.title())
-    return f'//*[{query}]'
+REACTIONS_BAR = f'.//span[{equals(Attr.ARIA_LABEL, "See who reacted to this")} and {equals(Attr.ROLE, "toolbar")}]'
+"""XPath query for the element containing reaction buttons in a post"""
 
 
 class ArrowUI:
