@@ -6,7 +6,7 @@ with open('requirements.txt') as req_file:
 setup(
     name='feedscraper',
     packages=['feedscraper'],
-    version='0.0.1',
+    version='1.0.0',
     install_requires=deps,
     description='A library for scraping facebook and automating basic user actions.',
     author='Atai Ambus',
