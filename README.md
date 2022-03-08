@@ -16,96 +16,68 @@ cd feedscraper
 pip3 install .
 ```
 
-If you just want to play around without installing, you can clone the repo and write your code 
-in the `feedscraper` directory (in that case import classes from `Feed` directly).
-
-You may need to install chrome or [Chrome Driver](https://chromedriver.chromium.org/downloads) 
-or [Gecko Driver](https://github.com/mozilla/geckodriver/releases) to run the selenium automation.
-
 ## Features
 - Browse an infinite feed with selenium, exactly like a normal facebook user.
-- Broswe either home or group feeds
 - Log in as existing user
+- Keep user data folders to function as chrome profiles, representing a character logging in 
+for multiple sessions.
 - Parse posts seen into Post objects including the page the post 
 was on, the account who posted it and its textual contents
+- Specify only fields you need to avoid wasting scraping time
 - Like or Unlike browsed posts.
+
+Available Fields:
+- `USER` — posting user
+- `PAGE` — page the post was on. `None` if its not on a group.
+- `TIMESTAMP` — posting timestamo
+- `TEXT` — textual contents
+- `REACTIONS` — counts for each of the facebook reactions on the post
+- `SPONSORED` — boolean for post being sponsored
+- `RECOMMENDED` — boolean for post being recommended by facebook
+- `LIKED` — boolean for the post being liked by the browsing user
+- `URL` — post URL
 
 ## Usage
 
+
 ### Overview
-`HomeFeed` takes in an email and a password of the account to log into.
-`GroupFeed` takes in an email and a password as well, and a group uid, which is a
-big number that can be seen in the group's URL.
+`HomeFeed` takes in an email and a password of the account to log into
 
 (of course, the program runs completely locally and no information is sent anywhere whatsoever)
 
 Creating a feed object will open an automated browser window in the specified feed.
 
+`Field` is an enum with the fields detailed above.
+
 `feed.browse` gives a generator for post objects; it will scroll and parse them as it is asked for
 more objects. Since there is an infinite scroll it won't end on its own and if it's iterated there should
-be an exit condition.
+be an exit condition. It takes an optional `fields` parameter which is a list of `Field` or `str` specifying 
+fields to scrape.
 
+`post.like`, `post.unlike` and `post_toggle_like` can be used to control the like button of a given post.
 
 `post.contains`, `post.on` and `post.by` are boolean functions that take in regex
 and search for a match in post text, name of page a post was posted on and the name
 of the posting account, respectively.
 
-`post.text`, `post.account` and `post.page_on` `post.liked` are fairly straightforward class members.
+Post feature accessors:
+- `post.metadata` contains `user`, `page` and `timestamp` attributes, 
+- `post.text` contains text contents
+- `post.sponsored` contains a boolean for whether the post is sponsored
+- `post.recommended` contains a boolean for whether the post is "recommended for you"
+- `post.reactions` contains attributes for reaction counts: `angry`, `care`, `haha`, `like`, `love`, `sad` and `wow`.
+Reaction enum contains the list of these reactions.
+- `post.liked` contains liked status
+- `post.url` contains post url.
 
-`post.like`, `post.unlike` and `post_toggle_like` can be used to control the like button of a given post.
+Both fields that are not specified and fields the parser failed to parse are set to `None`.
+
 
 ### Examples
-
-Printing the first 100 posts in a facebook help group.
-
-```python
-from feedscraper import GroupFeed
-
-email = 'myemail@gmail.com'
-password = 'mypassword'
-
-group_feed = GroupFeed(email, password, group_uid=460026072039907)
-
-post_iterator = group_feed.browse()
-
-for i, post in enumerate(post_iterator):
-    if i > 100:
-        break
-    print('Poster ' + post.account)
-    print('Page ' + post.on_page)
-    print('Text: ' + post.text)
-```
-
-Liking posts in home feed if they contain the number 42 and exiting the browser if they contain the word "quit"
-```python
-from feedscraper import HomeFeed
-
-email = 'myemail@gmail.com'
-password = 'mypassword'
-
-home_feed = HomeFeed(email, password)
-
-post_iterator = home_feed.browse()
-
-for post in post_iterator:
-    if post.contains('42'):
-        post.like()
-        
-    if post.contains('exit'):
-        break
-```
-
-
+More examples are given in `tests/main.py` in this repository.
 
 ### Caveats
-Facebook does not like scraping (and it is in fact forbidden in its Terms of Service). It tried to 
-prevent people from doing  it in a variety of ways.
-
-As it stands, the current scheme this library uses for scraping is quite fragile, and it is very 
-vulnerable to any changes in Facebook's UI. 
-
-Mostly due to this reason, it may not work consistently; it seems facebook does do things like arbitrarily change 
-its UI a bit, possibly to combat this behaviour.    
-
-In addition, group feeds attempt to browse posts by year using facebook's search feature, but unfortunately it seems to
-limit results to the first 100 posts. This behaviour will be removed soon.
+- Using this without Facebook's written permission violates their terms of service.
+- This library is quite vulnerable to facebook design/UI chnages and will most probably not work in the long term.
+- Facebook may block user from performing certain interactions after they are performed too quickly in succession, 
+so it is recommended to somewhat space post parsing.
