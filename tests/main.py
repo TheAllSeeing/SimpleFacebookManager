@@ -1,12 +1,13 @@
 import configparser
+import csv
 import subprocess
 from configparser import ConfigParser
 from time import sleep
 from typing import Tuple
 
-from feedscraper import utils
+from feedscraper import utils, Comment
 from feedscraper.extractors import Field
-from feedscraper.feed import HomeFeed
+from feedscraper.feed import HomeFeed, GroupFeed, PageFeed
 from feedscraper.post import Post
 
 
@@ -45,11 +46,18 @@ def show_side_ads(feed):
 
 def collect_posts(feed):
     with open('tests/example.csv', 'w+') as f:
-        f.write(','.join(Post.CSV_HEADINGS))
+        f.write(','.join(Post.CSV_COLUMNS))
     for post in feed.browse(fields=[Field.USER, Field.PAGE, Field.TIMESTAMP, Field.URL, Field.TEXT]):
         print(post.to_csv_str())
         with open('tests/example.csv', 'a') as f:
             f.write(post.to_csv_str())
+
+
+def show_posts(feed, fields=None):
+    for i, post in enumerate(feed.browse(fields=fields)):
+        print('----- ' + str(i) + ' -----')
+        print(post)
+        print()
 
 
 def pick_and_run(feed):
@@ -73,5 +81,15 @@ def pick_and_run(feed):
 if __name__ == '__main__':
     user = 'Example A'
     email, password = get_login(user)
-    feed = HomeFeed(email, password, data_dir=f'data/{user.replace(" ", "_")}')
-    pick_and_run(feed)
+    feed = PageFeed(email, password, '104112008010398', data_dir=f'data/{user.replace(" ", "_")}')
+    fields = [Field.COMMENT_TREE]
+
+    with open('posts.csv', 'w+') as posts_file, open('comments.csv', 'w+') as comments_file:
+        posts_writer = csv.writer(posts_file, quoting=csv.QUOTE_ALL)
+        comments_writer = csv.writer(comments_file, quoting=csv.QUOTE_ALL)
+        posts_writer.writerow(Post.CSV_COLUMNS)
+        comments_writer.writerow(Comment.CSV_COLUMNS)
+        for i, post in enumerate(feed.browse(fields=fields)):
+            posts_writer.writerow(post.csv)
+            for comment in post.comments:
+                comments_writer.writerow(comment.csv)

@@ -14,8 +14,8 @@ that they are very vulnerable to UI changes, and so will most probably not work 
 
 Queries that rely on ARIA accessibility labels (Attr.ARIA_LABEL), element roles (Attr.ROLE) and to a lesser degree
 element text (Attr.TEXT) will probably be more stable, since they rely on actual provided facebook functionality.
-Still, many queries here do use the current structure and specifics of the code that have shown to work over time,
-but will inevitably be significantly more vulnerable to UI changes.
+Still, many queries here do use the current structure and specifics of the source code that have shown to work over
+time, but will inevitably be significantly more vulnerable to UI changes.
 
 It seems that facebook may give slightly different UI to different users. The one observed here is two variations on
 the display of each post's metadata - either 'account > page' and then below 'time * public', or 'page' and then
@@ -34,6 +34,7 @@ class Attr(Enum):
     CLASS = '@class'
     STYLE = '@style'
     ROLE = '@role'
+    HREF = '@href'
     ARIA_LABEL = '@aria-label'
     DATA_PAGELET = '@data-pagelet'
     DATA_AD_PREVIEW = '@data-ad-preview'
@@ -59,6 +60,10 @@ def text_is(value):
     return equals(Attr.TEXT, value)
 
 
+def text_has(value):
+    return contains(Attr.TEXT, value)
+
+
 def contains(attr: Attr, substring):
     """
     Generate xpath query for attributes containing a given substring
@@ -78,9 +83,12 @@ def starts_with(attr: Attr, start):
     """
     return f'starts-with({attr.value}, "{start}")'
 
+def text_starts(start):
+    return starts_with(Attr.TEXT, start)
 
-def nonempty(attr: Attr):
-    return f'string-length({attr.value})'
+
+def nonempty():
+    return 'normalize-space()'
 
 
 # Consistency #1:
@@ -96,7 +104,7 @@ IS_TOOLTIP = equals(Attr.ROLE, 'tooltip')
 FEED = f'//*[{equals(Attr.ROLE, "feed")}]'
 """XPath query for a facebook feed"""
 
-POST_BY_FEED = f'/div[{nonempty(Attr.INNER_HTML)}]'
+POST_BY_FEED = f'./div[{nonempty()}]'
 """XPath query for the posts in a facebook home feed, from the third onwards"""
 
 # Consistency #2:
@@ -110,7 +118,7 @@ LOWER_METADATA = f'./*[2]'
 
 SPONSORED = f'.//a[{equals(Attr.ARIA_LABEL, "Sponsored")} and {IS_LINK}]'
 """XPath query for the "Sponsored" disclaimer of a post. Will throw an error if it does not exist."""
-RECOMMENDED = f'.//*[{equals(Attr.ROLE, "article")}]//span[{text_is("Recommended post")}]'
+RECOMMENDED = f'.//*[{equals(Attr.ROLE, "article")}]//span[{text_is("Recommended post")} or {text_is("Suggested for you")}]'
 """XPath query for the "Recommended for you" disclaimer of a post. Will throw an error if it does not exist."""
 
 LIKE_BUTTON = f'.//span[{text_is("Like")}]/../../../..'
@@ -120,7 +128,8 @@ SEE_MORE_BTN = f'.//div[{IS_BUTTON} and {text_is("See more")}]'
 SHOW_ORIGINAL_BTN = f'.//div[{IS_BUTTON} and {text_is("See original")}]'
 """XPath query for the "Show Original" button of translated posts. Will throw an error if it does not exist"""
 
-CONTENT_TEXT = f'{METADATA}/../../../../div[3]'
+# CONTENT_TEXT = f'{METADATA}/../../../../div[3]'
+CONTENT_TEXT = f'.//*[@data-ad-preview="message"]'
 """XPath query for post text content"""
 # CONTENT_TEXT_ALTERNATE = f'.//div[{equals(Attr.DATA_AD_PREVIEW, "message")}]/div[1]/div[1]/span[1]'
 # CONTENT_TEXT_ALTERNATE = f'.//div[{contains(Attr.STYLE, "font-weight: bold; text-align: center;")}][0]'
@@ -128,15 +137,21 @@ CONTENT_TEXT = f'{METADATA}/../../../../div[3]'
 TOOLTIP = f'//*[{IS_TOOLTIP}]'
 """XPath query for popup tooltips"""
 
-# Helper strings to generate more comments query, because RegEx caused issues.
-_more_comments = [f'contains(text(), "View {i} more comments")' for i in range(1, 10)]
-_more_comments.append('contains(text(), "View more comments")')
-
-MORE_COMMENTS = f'.//div[{IS_BUTTON}]//*[{" or ".join(_more_comments)}]'
-"""XPath query for more comments button in a post"""
+COMMENT_COUNT = f'.//div[{IS_BUTTON}]/span[{text_has("Comment")}]'
+SHARE_COUNT = f'.//div[{IS_BUTTON}]/span[{text_has("Share")}]'
 
 REACTIONS_BAR = f'.//span[{equals(Attr.ARIA_LABEL, "See who reacted to this")} and {equals(Attr.ROLE, "toolbar")}]'
 """XPath query for the element containing reaction buttons in a post"""
+
+IMAGE_LINK = f'.//*[{starts_with(Attr.HREF, "https://www.facebook.com")} ' \
+             f'and {contains(Attr.HREF, "/photos/")} ' \
+             f'and {IS_LINK}]//img'
+# VIDEO = './/video'
+
+
+COMMENT_FILTER = f'.//div[{IS_BUTTON}]/span[{text_is("Most relevant")} or {text_is("Newest")}]'
+COMMENT_FILTER_AT_ALL = f'.//div[{IS_BUTTON}]/span[{text_is("All comments")}]'
+ALL_COMMENTS_MENUITEM = f'//*[{equals(Attr.ROLE, "menuitem")}]//span[{text_is("All comments")} or {text_is("Realtime")}]'
 
 
 class ArrowUI:
@@ -178,8 +193,27 @@ class Group:
 
 class Page:
     FEED = f'//*[{equals(Attr.ROLE, "main")}]//*[{equals(Attr.ROLE, "main")}]/div[1]'
-    POST_BY_FEED = './div'
+    POST_BY_FEED = './div['
     METADATA = Group.METADATA
     USER_BY_METADATA = Group.USER_BY_METADATA
     TIME_BY_METADATA = Group.TIME_BY_METADATA
     PERMALINK_BY_METADATA = Group.PERMALINK_BY_METADATA
+    PAGE_NAME = '//h2/span//a'
+
+
+class Comment:
+    MAIN_FEED = './/div[@data-visualcompletion]/div/div/ul'
+    CHILD_FROM_FEED = './li'
+    NODE_VALUE = './div[1]'
+    CHILDREN_FEED = './div[2]/div/ul'
+    TIMESTAMP = './/ul//li/a'
+    AUTHOR = './/span/span'
+    TEXT = './/span[@lang]'
+    REACTION_COUNT = '//div[contains(@aria-label, "see who reacted to this")]'
+    MORE_BUTTON = f'.//*[{IS_BUTTON}]//span[{text_starts("View")} and {text_has("more comment")}]'
+    REPLY_PROMPT = f'.//div[{IS_BUTTON} and {text_is("Reply")}]'
+    """XPath query for more comments button in a post"""
+    MORE_REPLIES_BUTTON = f'.//li//div[{IS_BUTTON}]//span[{text_has("Replies")} ' \
+                          f'or {text_is("1 Reply")} ' \
+                          f'or {text_starts("View")} and {text_has("more reply")} ' \
+                          f'or {text_starts("View")} and {text_has("more replies")}]'

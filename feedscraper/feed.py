@@ -23,7 +23,7 @@ class Feed:
     """
     SCROLL_PAUSE = 1.2
 
-    def __init__(self, email, password, *, data_dir=None):
+    def __init__(self, email, password, *, url=None, data_dir=None):
         """
         logs in to facebook and displays a feed.
 
@@ -45,19 +45,22 @@ class Feed:
         self.driver: WebDriver = webdriver.Chrome(options=options)
         self.actions = ActionChains(self.driver)
 
-        self.driver.get("https://www.facebook.com")
-        self.driver.implicitly_wait(0.5)
-
+        self.driver.get('https://www.facebook.com/login')
         try:
             self.driver.find_element(By.ID, 'email').send_keys(email)
             self.driver.find_element(By.ID, 'pass').send_keys(password)
             self.driver.find_element(By.NAME, 'login').click()  # Send mouse click
             self.driver.implicitly_wait(0.5)
+            sleep(3)
         except NoSuchElementException:  # Already logged in
             pass
+        url = 'https://www.facebook.com' if url is None else url
+        self.driver.get(url)
+        self.driver.implicitly_wait(0.5)
 
     def __del__(self):
         try:
+            self.driver.close()
             self.driver.quit()
         except ImportError:  # happens if python crushes
             pass
@@ -98,7 +101,7 @@ class Feed:
                 map(str.splitlines,  # split to lines
                     map(lambda el: el.text, ads_text))))  # get text
 
-    def browse(self, fields=None, in_group=None):
+    def browse(self, fields=None, in_group=None, image_dir=None):
         """
         A generator iterating posts.
         Each post generated will scroll the page and hover over elements as necessary.
@@ -140,7 +143,8 @@ class Feed:
                     self,
                     extractors.post_el(feed_el, i),
                     fields=fields,
-                    in_group=in_group
+                    in_group=in_group,
+                    image_dir=image_dir
                 )
             except NoSuchElementException as e:
                 # Set warning variables
@@ -149,7 +153,6 @@ class Feed:
 
                 # Warn
                 utils.warning(f'{post_count} Scroll Fail Count: {scroll_fail_count}')
-                utils.warning(str(e))
 
                 # Try to load more posts
                 self.scroll_to_bottom()
@@ -161,7 +164,8 @@ class Feed:
                             self,
                             extractors.post_el(feed_el, i),
                             fields=fields,
-                            in_group=in_group
+                            in_group=in_group,
+                            image_dir=image_dir
                         )
                         scroll_fail_count = 0
                         load_fail_count = 0
@@ -170,10 +174,10 @@ class Feed:
                         sleep(0.5)
                         load_fail_count += 1
                         utils.warning(f'{post_count} Load fail count: {load_fail_count}')
-                        utils.warning(traceback.format_exc())
-                        utils.warning(str(e))
             finally:
                 i += 1
+
+        utils.confirm('End of feed')
 
 
 class HomeFeed(Feed):
@@ -205,31 +209,26 @@ class HomeFeed(Feed):
 
         self.driver.implicitly_wait(5)
 
-    def browse(self, fields=None):
-        return super(HomeFeed, self).browse(fields=fields)
+    def browse(self, fields=None, image_dir=None):
+        return super(HomeFeed, self).browse(fields=fields, image_dir=image_dir)
 
 
 class PageFeed(Feed):
 
-    def __init__(self, email, password, page_uid, data_dir=None):
-        super(PageFeed, self).__init__(email, password, data_dir=data_dir)
-        self.url = 'https://www.facebook.com/' + page_uid + '/'
-        self.driver.get(self.url)
-        self.page_name = re.match(
-            r'https://www\.facebook\.com/(.*)-' + page_uid,
-            unquote(self.driver.current_url)
-        ).group(1).replace('-', ' ')
+    def __init__(self, email, password, url, data_dir=None):
+        super(PageFeed, self).__init__(email, password, url=url, data_dir=data_dir)
+        self.url = url
+        self.page_name = extractors.page_name(self.driver)
 
-    def browse(self, fields=None):
-        return super(PageFeed, self).browse(fields=fields, in_group=self.page_name)
+    def browse(self, fields=None, image_dir=None):
+        return super(PageFeed, self).browse(fields=fields, in_group=self.page_name, image_dir=image_dir)
 
 
 class GroupFeed(Feed):
-    def __init__(self, email, password, group_uid, data_dir=None):
-        super(GroupFeed, self).__init__(email, password, data_dir=data_dir)
-        self.url = 'https://www.facebook.com/groups/' + group_uid + '/'
-        self.driver.get(self.url)
-        self.page_name = self.driver.find_element(By.XPATH, f'//a[@href="{self.url}"]').text
+    def __init__(self, email, password, url, data_dir=None):
+        super(GroupFeed, self).__init__(email, password, url=url, data_dir=data_dir)
+        self.url = url
+        self.page_name = self.driver.find_element(By.XPATH, f'//a[@href="{self.url}/"]').text
 
-    def browse(self, fields=None):
-        return super(GroupFeed, self).browse(fields=fields, in_group=self.page_name)
+    def browse(self, fields=None, image_dir=None):
+        return super(GroupFeed, self).browse(fields=fields, in_group=self.page_name, image_dir=image_dir)
