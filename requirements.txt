@@ -1,3 +1,4 @@
 termcolor
 selenium
+webdriver-manager
 bs4

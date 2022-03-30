@@ -7,8 +7,8 @@ from typing import List
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver import ActionChains
-from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
 from feedscraper import utils, extractors
 from feedscraper.post import Post
@@ -40,7 +40,7 @@ class Feed:
         })  # Avoids  "Allow Notification" pop-ups
         if data_dir is not None:
             options.add_argument(f'user-data-dir={data_dir}')
-        self.driver: WebDriver = webdriver.Chrome(options=options)
+        self.driver = webdriver.Chrome(ChromeDriverManager().install())
         self.actions = ActionChains(self.driver)
 
         self.driver.get("https://www.facebook.com")
