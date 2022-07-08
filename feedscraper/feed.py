@@ -233,8 +233,8 @@ class PageFeed(Feed):
 class GroupFeed(Feed):
     def __init__(self, email, password, url, data_dir=None):
         super(GroupFeed, self).__init__(email, password, url=url, data_dir=data_dir)
-        self.url = url
-        self.page_name = self.driver.find_element(By.XPATH, f'//a[@href="{self.url}/"]').text
+        self.url = url if url.endswith('/') else url + '/'
+        self.page_name = self.driver.find_element(By.XPATH, f'//a[@href="{self.url}"]').text
 
     def browse(self, fields=None, image_dir=None):
         return super(GroupFeed, self).browse(fields=fields, in_group=self.page_name, image_dir=image_dir)
