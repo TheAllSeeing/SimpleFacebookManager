@@ -6,11 +6,13 @@ from time import sleep
 from typing import List
 from urllib.parse import unquote, quote
 
+
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver import ActionChains
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
 from feedscraper import utils, extractors, xpaths
 from feedscraper.post import Post
@@ -42,7 +44,7 @@ class Feed:
         })  # Avoids  "Allow Notification" pop-ups
         if data_dir is not None:
             options.add_argument(f'user-data-dir={data_dir}')
-        self.driver: WebDriver = webdriver.Chrome(options=options)
+        self.driver: WebDriver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
         self.actions = ActionChains(self.driver)
 
         self.driver.get('https://www.facebook.com/login')
@@ -51,7 +53,7 @@ class Feed:
             self.driver.find_element(By.ID, 'pass').send_keys(password)
             self.driver.find_element(By.NAME, 'login').click()  # Send mouse click
             self.driver.implicitly_wait(0.5)
-            sleep(3)
+            sleep(2.5)
         except NoSuchElementException:  # Already logged in
             pass
         url = 'https://www.facebook.com' if url is None else url

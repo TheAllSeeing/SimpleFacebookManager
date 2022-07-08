@@ -384,7 +384,7 @@ def reactions(post: WebElement, driver: WebDriver) -> Reactions:
             utils.warning(traceback.format_exc())
             params[reaction_name] = None
         print(reaction_name + ': ' + str(datetime.now() - start))
-        sleep(1)
+        sleep(4)
     # Get a list sorted by reaction name, as in the Reactions constructor
     params = [it[1] for it in sorted(params.items(), key=lambda it: it[0])]
     return Reactions(*params)
