@@ -49,6 +49,10 @@ class Feed:
 
         self.driver.get('https://www.facebook.com/login')
         try:
+            self.driver.find_element(By.CSS_SELECTOR, 'button[title="Only allow essential cookies"]').click()
+        except NoSuchElementException:
+            print('Failed to find cookies preference button.')
+        try:
             self.driver.find_element(By.ID, 'email').send_keys(email)
             self.driver.find_element(By.ID, 'pass').send_keys(password)
             self.driver.find_element(By.NAME, 'login').click()  # Send mouse click
