@@ -280,7 +280,10 @@ def url(post: WebElement, feed):
 
     if isinstance(feed, GroupFeed):
         permalink = post.find_element(By.XPATH, f'{xpaths.Group.METADATA}/{xpaths.Group.PERMALINK_BY_METADATA}')
-        actions.move_to_element(permalink).perform()
+        try:
+            actions.move_to_element(permalink).perform()
+        except ElementNotInteractableException:
+            pass
         sleep(0.15)
         return re.sub(r'\?.*$', '', permalink.get_attribute('href'))
 
