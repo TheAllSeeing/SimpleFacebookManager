@@ -8,5 +8,4 @@ tqdm~=4.62.3
 future~=0.18.2
 validators~=0.18.2
 ttkthemes~=3.2.2
-feedscraper~=1.0.0
-setuptools~=45.2.0
+webdriver-manager

@@ -58,9 +58,9 @@ def file_picker_cmd(btn, row, var: tk.StringVar, file_label=None, directory=Fals
 
 def write_files(feed: Feed, posts_file: str, fields: List[Field], write_comments: Optional[str], image_dir,
                 from_date: datetime, to_date: datetime):
-
-    posts_file = open(posts_file, 'w+')
-    comments_file = open(write_comments, 'w+') if write_comments else None
+    print('Initializing...')
+    posts_file = open(posts_file, 'w+', encoding='utf-8', newline='')
+    comments_file = open(write_comments, 'w+', encoding='utf-8', newline='') if write_comments else None
     try:
         posts_writer = csv.writer(posts_file, quoting=csv.QUOTE_ALL)
         posts_writer.writerow(Post.CSV_COLUMNS)
@@ -80,7 +80,6 @@ def write_files(feed: Feed, posts_file: str, fields: List[Field], write_comments
                 if past_date_count >= 10:
                     break
 
-            print(post)
             posts_writer.writerow(post.csv)
             if write_comments:
                 for comment in post.comments:
@@ -167,11 +166,12 @@ if __name__ == '__main__':
     column = 0
     for field in Field:
 
-        if field in [Field.RECOMMENDED, Field.SPONSORED]:
+        if field in [Field.RECOMMENDED, Field.SPONSORED, Field.LIKED]:
             continue
 
         c = Checkbutton(text=field.value)
-        c.state(['!alternate', 'selected'])
+        if field != Field.COMMENT_TREE:
+            c.state(['!alternate', 'selected'])
         c.grid(column=column, row=row_count, sticky='w', padx=(10, 0))
         if field == Field.IMAGE:
             pass
@@ -192,7 +192,6 @@ if __name__ == '__main__':
 
 
     def image_cmd():
-        print(img_row)
         if field_btns[Field.IMAGE].instate(['selected']):
             img_dir_label.grid(column=0, row=img_row, sticky='w', padx=(20, 0), pady=(20, 0))
             img_dir_btn.config(command=lambda: file_picker_cmd(img_dir_btn, img_row, img_dir_var,
@@ -307,28 +306,5 @@ if __name__ == '__main__':
     #     return inner
     # sys.stdout.write = stdout_decor(sys.stdout.write)
     # log_box.grid(row=row_count, column=0, sticky='w', padx=(10, 0), pady=(40, 0))
-
-    def test():
-        email_box.insert(0, 'test493617@gmail.com')
-        password_box.insert(0, 'Password123456')
-        url_box.insert(0, 'https://www.facebook.com/groups/2110506565838909')
-
-        from_picker.delete(0, tk.END)
-        from_picker.config(foreground='black')
-        from_picker.insert(0, '01/01/2020')
-
-        to_picker.delete(0, tk.END)
-        to_picker.config(foreground='black')
-        to_picker.insert(0, '01/01/2023')
-        save_file_var.set('/tmp/test.csv')
-        img_dir_var.set('/tmp/testim')
-        comment_file_var.set('/tmp/testcom.csv')
-
-        field_btns[Field.REACTIONS].state(['!selected'])
-        # field_btns[Field.COMMENT_TREE].state(['!selected'])
-        # comments_cmd()
-
-
-    test()
 
     root.mainloop()

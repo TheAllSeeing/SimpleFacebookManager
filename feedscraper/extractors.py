@@ -280,7 +280,10 @@ def url(post: WebElement, feed):
 
     if isinstance(feed, GroupFeed):
         permalink = post.find_element(By.XPATH, f'{xpaths.Group.METADATA}/{xpaths.Group.PERMALINK_BY_METADATA}')
-        actions.move_to_element(permalink).perform()
+        try:
+            actions.move_to_element(permalink).perform()
+        except ElementNotInteractableException:
+            pass
         sleep(0.15)
         return re.sub(r'\?.*$', '', permalink.get_attribute('href'))
 
@@ -384,7 +387,7 @@ def reactions(post: WebElement, driver: WebDriver) -> Reactions:
             utils.warning(traceback.format_exc())
             params[reaction_name] = None
         print(reaction_name + ': ' + str(datetime.now() - start))
-        sleep(1)
+        sleep(4)
     # Get a list sorted by reaction name, as in the Reactions constructor
     params = [it[1] for it in sorted(params.items(), key=lambda it: it[0])]
     return Reactions(*params)
